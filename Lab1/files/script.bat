@@ -1,139 +1,175 @@
-@echo off
-chcp 65001 > nul
-setlocal enabledelayedexpansion
+:: .\script.bat dhcp "Ethernet"
+:: .\script.bat static "Ethernet" 192.168.1.10 255.255.255.0 192.168.1.1 8.8.8.8
+:: .\script.bat
 
-:: Проверка запуска от имени администратора
+@echo off
+:: Не показывать команды при выполнении
+
+chcp 65001 > nul
+:: Включить UTF-8 (чтобы русский текст отображался нормально)
+
+setlocal enabledelayedexpansion
+:: Включить локальные переменные (безопасно для скрипта)
+
+:: Проверяем, запущен ли скрипт от администратора
 net session >nul 2>&1
+:: Эта команда работает только у администратора
+
 if errorlevel 1 (
     echo Ошибка: скрипт нужно запускать от имени администратора.
     pause
-    exit /b 1
+    exit /b 1 :: Остановить выполнение
 )
 
-:: Считываем параметры
+:: Получаем параметры из командной строки
 set "mode=%~1"
+:: Режим: dhcp или static
+
 set "interface=%~2"
+:: Имя сетевого адаптера (например "Ethernet")
+
 set "address=%~3"
+:: IP-адрес (например 192.168.1.10)
+
 set "mask=%~4"
+:: Маска подсети (например 255.255.255.0)
+
 set "gateway=%~5"
+:: Шлюз (обычно 192.168.1.1)
+
 set "dns=%~6"
+:: DNS-сервер (например 8.8.8.8)
 
-:: Выбор режима
 :choose_mode
-if /i "%mode%"=="exit" goto end
-if /i "%mode%"=="?" goto help
-if /i "%mode%"=="/?" goto help
-if /i "%mode%"=="help" goto help
-if /i "%mode%"=="dhcp" goto check_interface
-if /i "%mode%"=="static" goto check_interface
+:: Здесь выбирается режим работы
 
-:invalid_mode
-echo Неверный режим: "%mode%"
-set "mode="
-set /p "mode=Выберите режим (dhcp^|static^|help^|exit): "
+if /i "%mode%"=="exit" goto end
+:: Выход из скрипта
+
+if /i "%mode%"=="help" goto help
+:: Показать справку
+
+if /i "%mode%"=="dhcp" goto check_interface
+:: DHCP — автоматическая настройка
+
+if /i "%mode%"=="static" goto check_interface
+:: STATIC — ручная настройка
+
+:: Если ввели что-то неправильное
+echo Неверный режим
+set /p "mode=Введите dhcp, static или help: "
 goto choose_mode
 
-:: Проверка интерфейса
 :check_interface
+:: Проверяем, указали ли интерфейс
+
 if "%interface%"=="" goto request_interface
+:: Если нет — спросить
 
 netsh interface show interface | find /I "%interface%" >nul
+:: Ищем интерфейс в списке
+
 if errorlevel 1 (
     echo Ошибка: интерфейс "%interface%" не найден.
     set "interface="
     goto request_interface
-) else (
-    goto process_mode
 )
 
+goto process_mode
+:: Если найден — идём дальше
+
 :request_interface
+:: Показываем список интерфейсов
+
 echo.
 echo Доступные интерфейсы:
 netsh interface show interface
-echo.
-set /p "interface=Введите точное название интерфейса: "
-goto check_interface
 
-:: Обработка режима
+echo.
+set /p "interface=Введите имя интерфейса: "
+:: Пользователь вводит имя
+
+goto check_interface
+:: Проверяем снова
+
 :process_mode
+:: Определяем, какой режим выполнять
+
 if /i "%mode%"=="dhcp" goto dhcp_mode
 if /i "%mode%"=="static" goto static_mode
-goto invalid_mode
+
+goto choose_mode
 
 :dhcp_mode
-echo Настройка по DHCP...
+:: Включаем автоматическое получение IP
+
+echo Включение DHCP...
+
 netsh interface ipv4 set address name="%interface%" source=dhcp
-if errorlevel 1 (
-    echo Ошибка при включении DHCP для IP.
-    goto end
-)
+:: IP будет выдаваться автоматически
 
 netsh interface ipv4 set dnsservers name="%interface%" source=dhcp
-if errorlevel 1 (
-    echo Ошибка при включении DHCP для DNS.
-    goto end
-)
+:: DNS тоже автоматически
 
 goto result_check
 
 :static_mode
-echo Режим статической настройки
+:: Ручной ввод настроек
+
+echo Ручная настройка
 
 :get_ip
 if "%address%"=="" (
-    set /p "address=Введите IP-адрес: "
+    set /p "address=Введите IP: "
     goto get_ip
 )
 
 :get_mask
 if "%mask%"=="" (
-    set /p "mask=Введите маску подсети: "
+    set /p "mask=Введите маску: "
     goto get_mask
 )
 
 :get_gateway
 if "%gateway%"=="" (
-    set /p "gateway=Введите основной шлюз: "
+    set /p "gateway=Введите шлюз: "
     goto get_gateway
 )
 
 :get_dns
 if "%dns%"=="" (
-    set /p "dns=Введите DNS-сервер: "
+    set /p "dns=Введите DNS: "
     goto get_dns
 )
 
-echo Применение заданных параметров...
-netsh interface ipv4 set address name="%interface%" source=static address=%address% mask=%mask% gateway=%gateway% gwmetric=1
-if errorlevel 1 (
-    echo Ошибка при установке IP-адреса, маски или шлюза.
-    goto end
-)
+echo Применяем настройки...
 
-netsh interface ipv4 set dnsservers name="%interface%" source=static address=%dns% register=primary
-if errorlevel 1 (
-    echo Ошибка при установке DNS.
-    goto end
-)
+netsh interface ipv4 set address name="%interface%" source=static address=%address% mask=%mask% gateway=%gateway%
+:: Устанавливаем IP, маску и шлюз
+
+netsh interface ipv4 set dnsservers name="%interface%" source=static address=%dns%
+:: Устанавливаем DNS
 
 :result_check
+:: Показываем результат
+
 echo.
-echo Результат:
+echo Текущие настройки:
 netsh interface ipv4 show config name="%interface%"
+
 goto end
 
 :help
+:: Подсказка, как использовать скрипт
+
 echo.
-echo Автоматическая настройка:
-echo   %~nx0 dhcp "Имя интерфейса"
+echo Пример:
+echo script.bat dhcp "Ethernet"
+echo script.bat static "Ethernet" 192.168.1.10 255.255.255.0 192.168.1.1 8.8.8.8
 echo.
-echo Ручная настройка:
-echo   %~nx0 static "Имя интерфейса" 192.168.1.77 255.255.255.0 192.168.1.1 8.8.8.8
-echo.
-echo Интерактивный режим:
-echo   %~nx0
-echo.
-goto end
 
 :end
+:: Конец скрипта
+
 endlocal
+:: Очистка переменных
